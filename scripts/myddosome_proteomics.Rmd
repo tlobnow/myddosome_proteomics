@@ -1,0 +1,360 @@
+---
+title: "myddosome_proteomics"
+author: "Finn"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+``` {r, warning = FALSE, message = FALSE, echo = FALSE}
+pacman::p_load(tidyverse,data.table,jsonlite,janitor,ggrepel,UniprotR,knitr,svglite,readxl,plotly,fs,stringr,purrr, ggalt)
+
+################################################################################
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, echo = FALSE, fig.height=7, fig.width=14)
+options(stringsAsFactors = FALSE)
+theme_set(theme_bw())
+theme_update(panel.grid.minor = element_blank())
+################################################################################
+
+FILES_LOC  = "~/Documents/Github/master_thesis/"
+
+TIME_CHECK = fread(paste0(FILES_LOC, "summaries/TIME_CHECK.csv")) %>% 
+  mutate(BAIT = case_when(KO == "NONE" ~ PULLED_PROTEIN,                                     
+                          KO != "NONE" ~ paste(PULLED_PROTEIN, "KO", KO, sep = " ")))
+TIME_CHECK$ORIGIN <- as.factor(TIME_CHECK$ORIGIN)
+
+# QUERY_RUN_SUMMARY       <- fread("~/Documents/Github/myddosome_proteomics/data/summaries/MYD88_summary_withRecycles.csv") %>% select(-V1) #%>%
+  # separate(FILE, into = c("FILE","rep"), sep = "_rep", extra = "merge", remove = T) %>%
+  # mutate(rep = as.numeric(rep))
+QUERY_RUN_SUMMARY$QUERY <- unlist(lapply(strsplit(QUERY_RUN_SUMMARY$FILE, "_", fixed=TRUE), function(x) {
+  if ("MYD88" %in% x && "MOUSE" %in% x) {
+    return(x[4])
+  } else if ("MYD88" %in% x) {
+    return(x[2])
+  } else {
+    return(x[4])
+  }
+}))
+
+```
+
+### Pulled Proteins
+``` {r}
+unq_protein_ids          <- TIME_CHECK %>% pull(Protein.IDs) %>% unique() %>% as.data.frame()
+unq_protein_ids_filtered <- unq_protein_ids %>% filter(!str_detect(., pattern = "CON__"))
+unq_protein_ids_filtered <- unlist(lapply(strsplit(unq_protein_ids_filtered$., ";", fixed=TRUE), function(x) return(x[1]))) %>%
+  unique() %>% as.data.frame()
+
+# ========= Get the column containing unique protein IDs ===================== #
+all_protein_ids <- unique(unq_protein_ids_filtered$.)
+```
+
+### Add annotations for pulled proteins
+``` {r}
+# === GO TERMS =============================================================== #
+# fetch_data <- function(id) {
+#   retries <- 3
+#   while (retries > 0) {
+#     tryCatch({
+#       data <- UniprotR::GetProteinGOInfo(id)
+#       return(data)
+#     }, error = function(e) {
+#       retries <<- retries - 1
+#       if (retries == 0) {
+#         message("Failed after 3 retries")
+#         return(NULL)
+#       } else {
+#         message("Retrying...")
+#         Sys.sleep(5)
+#       }
+#     })
+#   }
+# }
+# GO_info_list        <- map(all_protein_ids, ~ fetch_data(.))
+# GO_info_df          <- tibble(protein_id = all_protein_ids, GO_info = GO_info_list)
+# GO_info_df_unnested <- GO_info_df %>% unnest(GO_info)
+
+# === PROTEIN FUNCTIONS ====================================================== #
+# fetch_data <- function(id) {
+#   retries <- 3
+#   while (retries > 0) {
+#     tryCatch({
+#       data <- UniprotR::GetProteinFunction(id)
+#       return(data)
+#     }, error = function(e) {
+#       retries <<- retries - 1
+#       if (retries == 0) {
+#         message("Failed after 3 retries")
+#         return(NULL)
+#       } else {
+#         message("Retrying...")
+#         Sys.sleep(5)
+#       }
+#     })
+#   }
+# }
+# proteinFCT_info_list        <- map(all_protein_ids, ~ fetch_data(.))
+# proteinFCT_info_df          <- tibble(protein_id = all_protein_ids, proteinFCT_info = proteinFCT_info_list)
+# proteinFCT_info_df_unnested <- proteinFCT_info_df %>% unnest(proteinFCT_info)
+
+# === PROTEIN NAMES & TAXA =================================================== #
+# fetch_data <- function(id) {
+#   retries <- 3
+#   while (retries > 0) {
+#     tryCatch({
+#       data <- UniprotR::GetNamesTaxa(id)
+#       return(data)
+#     }, error = function(e) {
+#       retries <<- retries - 1
+#       if (retries == 0) {
+#         message("Failed after 3 retries")
+#         return(NULL)
+#       } else {
+#         message("Retrying...")
+#         Sys.sleep(5)  # Wait for 5 seconds before retrying
+#       }
+#     })
+#   }
+# }
+# proteinNMS_info_list        <- map(all_protein_ids, ~ fetch_data(.))
+# proteinNMS_info_df          <- tibble(protein_id = all_protein_ids, proteinNMS_info = proteinNMS_info_list)
+# proteinNMS_info_df_unnested <- proteinNMS_info_df %>% unnest(proteinNMS_info)
+#
+# === JOIN THE DATA FRAMES AND SAVE ========================================== #
+# unq_protein_ids_filtered <- rename(unq_protein_ids_filtered, protein_id = `.`)
+# PROTEIN_INFO_1 <- full_join(unq_protein_ids_filtered, proteinNMS_info_df_unnested, by = "protein_id")
+# PROTEIN_INFO_2 <- full_join(PROTEIN_INFO_1, proteinFCT_info_df_unnested,           by = "protein_id")
+# PROTEIN_INFO_3 <- full_join(PROTEIN_INFO_2, GO_info_df_unnested,                   by = "protein_id")
+# fwrite(PROTEIN_INFO_3, "~/Documents/Github/myddosome_proteomics/data/summaries/PROTEIN_INFO.csv", row.names = F, sep = ",")
+```
+
+### READ PROTEIN INFO DF
+
+``` {r}
+PROTEIN_INFO <- fread("~/Documents/Github/myddosome_proteomics/data/summaries/PROTEIN_INFO.csv")
+PROTEIN_INFO <- rename(PROTEIN_INFO, QUERY = protein_id)
+```
+
+### MERGE WITH RUN SUMMARY
+
+``` {r}
+MAIN <- 
+  left_join(QUERY_RUN_SUMMARY, PROTEIN_INFO, by = "QUERY") %>% 
+  mutate(Confidence = case_when(iScore < 0.4 ~ "Low",
+                                iScore >= 0.4 & iScore < 0.5 ~ "Medium",
+                                iScore >= 0.5 & iScore < 0.7 ~ "High",
+                                TRUE ~ "Very High"))
+
+MAIN_SUBSET <- MAIN %>% 
+  group_by(Entry.Name) %>%
+  filter(iScore == max(iScore))
+
+FOLDER = "MYD88"
+```
+
+### PLOT
+
+``` {r}
+MAIN_PLOT <- MAIN %>% group_by(QUERY) %>%
+  ggplot(aes(iScore, piTM, label = Entry.Name)) +
+  geom_abline(col = "gray") +
+  geom_point(aes(col = Confidence), size = 3) +  # Use the new Confidence variable here
+  scale_color_manual(name = "Confidence",
+                     values = c("Low" = "gray80",
+                                "Medium" = "gray40",
+                                "High" = "cornflowerblue",
+                                "Very High" = "lightgreen")) +
+  ggrepel::geom_label_repel(data = MAIN, show.legend = F) +
+  ggtitle(paste0('Computational screening for PPI partners of ', FOLDER)) +
+  expand_limits(x=c(0,1), y=c(0,1)) +
+  geom_vline(xintercept = 0.4, col = "gray40", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.5, col = "cornflowerblue", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.7, col = "lightgreen", linetype = "dotted", linewidth = 1) +
+  annotate("text", x = 0.4, y = -0.05, label = "medium \n confidence") +
+  annotate("text", x = 0.5, y = -0.05, label = "high \n confidence") +
+  annotate("text", x = 0.7, y = -0.05, label = "very high \n confidence") +
+  theme(legend.position = "none")
+  
+# ggplotly(MAIN_PLOT)
+```
+
+``` {r}
+MAIN_SUBSET_PLOT <- MAIN_SUBSET %>% group_by(QUERY) %>%
+  ggplot(aes(iScore, piTM, label = Entry.Name)) +
+  geom_abline(col = "gray") +
+  geom_point(aes(col = Confidence), size = 3) +  # Use the new Confidence variable here
+  scale_color_manual(name = "Confidence",
+                     values = c("Low" = "gray80",
+                                "Medium" = "gray40",
+                                "High" = "cornflowerblue",
+                                "Very High" = "lightgreen")) +
+  ggrepel::geom_label_repel(data = MAIN, show.legend = F) +
+  ggtitle(paste0('Computational screening for PPI partners of ', FOLDER)) +
+  expand_limits(x=c(0,1), y=c(0,1)) +
+  geom_vline(xintercept = 0.4, col = "gray40", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.5, col = "cornflowerblue", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.7, col = "lightgreen", linetype = "dotted", linewidth = 1) +
+  annotate("text", x = 0.4, y = -0.05, label = "medium \n confidence") +
+  annotate("text", x = 0.5, y = -0.05, label = "high \n confidence") +
+  annotate("text", x = 0.7, y = -0.05, label = "very high \n confidence") +
+  theme(legend.position = "none")
+  
+ggplotly(MAIN_SUBSET_PLOT)
+```
+
+### CANDIDATES THAT PASS CONFIDENCE THRESHOLD ≥ 0.4
+``` {r}
+unq_protein_ids_above_threshold     <- MAIN        %>% filter(iScore >=0.4) %>% pull(QUERY) %>% unique() %>% as.data.frame()
+unq_protein_ids_above_threshold_sub <- MAIN_SUBSET %>% filter(iScore >=0.4) %>% pull(QUERY) %>% unique() %>% as.data.frame()
+fwrite(unq_protein_ids_above_threshold, "~/Documents/Github/myddosome_proteomics/data/summaries/unq_protein_ids_above_threshold.csv", sep = ",", row.names = F, col.names = F)
+```
+
+### FOLLOW GOOD CANDIDATES
+``` {r}
+unq_protein_ids_above_threshold_SUBSET <- MAIN %>% 
+  # filter(!str_detect(RECYCLE, pattern = "_recycled_")) %>%
+  # mutate(DATE_2 = ifelse(MODEL == 5, DATE, DATE)) %>%
+  # mutate(DATE_2 = ifelse(is.na(DATE_2), first(DATE_2, order_by = MODEL, na.rm = TRUE), DATE_2)) %>%
+  mutate(rep = as.factor(case_when(as.character(as.IDate(DATE)) < "2023-07-07" ~ 2, TRUE ~ 1))) %>%
+  ungroup() %>%
+  # group_by(QUERY, DATE_2) %>%
+  group_by(QUERY, rep) %>%
+  filter(QUERY %in% unq_protein_ids_above_threshold$.,
+         iScore == max(iScore),
+         !is.na(Entry)) %>%
+  ungroup(rep) %>%
+  mutate(DIFF_SCORE = max(iScore)-min(iScore),
+         DATE = as.character(as.IDate(DATE)),
+         # DATE_2 = as.character(as.IDate(DATE_2))
+         ) %>% 
+  filter(DIFF_SCORE < .2)
+
+unq_protein_ids_above_threshold_PLOT <- unq_protein_ids_above_threshold_SUBSET %>% 
+  group_by(QUERY) %>%
+  ggplot(aes(iScore, piTM, label = Entry.Name)) +
+  geom_abline(col = "gray") +
+  geom_point(aes(col = DIFF_SCORE, label = rep, shape = rep,
+                 text = paste("iScore:", iScore,
+                              "<br>piTM:", piTM,
+                              "<br>Entry Name:", Entry.Name,
+                              "<br>Gene:",Gene.Names..primary.,
+                              "<br>Date:", DATE,
+                              "<br>rep:", rep)), size = 3) +
+  scale_color_gradient(low = "red", high = "lightgray") +  # Add this line for the color gradient
+  geom_line(aes(group = QUERY, col = DIFF_SCORE)) +
+  ggtitle(paste0('Computational screening for PPI partners of ', FOLDER)) +
+  expand_limits(x=c(0,1), y=c(0,1)) +
+  geom_vline(xintercept = 0.4, col = "gray40", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.5, col = "cornflowerblue", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.7, col = "lightgreen", linetype = "dotted", linewidth = 1) +
+  annotate("text", x = 0.4, y = -0.05, label = "medium \n confidence") +
+  annotate("text", x = 0.5, y = -0.05, label = "high \n confidence") +
+  annotate("text", x = 0.7, y = -0.05, label = "very high \n confidence") +
+  theme(legend.position = "bottom") +
+  facet_wrap(Gene.Names..primary.~Entry.Name)
+  
+# ggplotly(unq_protein_ids_above_threshold_PLOT, tooltip = "text")
+unq_protein_ids_above_threshold_PLOT
+```
+
+
+``` {r}
+library(dplyr)
+
+# Calculate the proportion of models with pLDDT > 70 for each protein
+proportion_over_70_long <- MAIN %>%
+  group_by(QUERY) %>%
+  summarise(proportion_above_70 = round(mean(pLDDT > 70), 2),
+            mean_pLDDT = round(mean(pLDDT), 2),
+            pLDDT = pLDDT) %>%
+  ungroup()
+
+proportion_over_70 <- MAIN %>%
+  group_by(QUERY) %>%
+  summarise(proportion_above_70 = round(mean(pLDDT > 70), 2),
+            mean_pLDDT = round(mean(pLDDT), 2)) %>%
+  distinct(QUERY, .keep_all = T) %>%
+  ungroup()
+
+# Set a threshold for the proportion, e.g., 0.6 (meaning at least 60% of models have pLDDT > 70)
+threshold <- 0.99
+
+# Filter proteins based on the threshold
+potential_rescue_proteins <- proportion_over_70 %>%
+  filter(proportion_above_70 >= threshold)
+
+# Join with BDLD_LIB for ELISA_STATUS and other info
+candidates_incl_tested <- left_join(potential_rescue_proteins, 
+                                    MAIN[,c("QUERY", "iScore", "ELISA_STATUS")],
+                                    by = c("QUERY", "ELISA_STATUS"))
+
+# Filter the original bdld dataframe
+candidates <- bdld %>%
+  filter(ID %in% candidates_incl_tested$ID) %>% arrange(ELISA_STATUS)
+# fwrite(candidates_incl_tested, "~/Documents/Github/master_thesis/ESSENTIAL/pLDDT_prop_99_candidates.csv", row.names = F)
+
+kable(candidates_incl_tested)
+
+# All unique IDs from the original dataset
+all_ids <- unique(bdld$ID)
+# IDs from the potential_rescue_proteins dataset
+rescue_ids <- potential_rescue_proteins$ID
+# IDs that are filtered OUT
+filtered_out_ids <- setdiff(all_ids, rescue_ids)
+
+
+# Join proportion_over_70 dataframe with BDLD_LIB for the desired columns
+filtered_out_df <- proportion_over_70 %>%
+  left_join(BDLD_LIB[,c("ID", "taxend", "ELISA_STATUS")], by = c("ID", "ELISA_STATUS")) %>%
+  filter(ID %in% filtered_out_ids)
+# fwrite(filtered_out_df, "~/Documents/Github/master_thesis/ESSENTIAL/pLDDT_prop_99_eliminated_candidates.csv", row.names = F)
+
+proportion_over_70_long %>%
+  ggplot(aes(pLDDT, ELISA_STATUS, col = ELISA_STATUS, alpha = proportion_above_70)) +
+  geom_jitter() +
+  color_palette(palette = Okabe_Ito)
+
+proportion_over_70_long_plt <- proportion_over_70_long %>%
+  ggplot() +
+  geom_vline(xintercept = 70, linetype = "dotted") +
+  geom_jitter(data = proportion_over_70_long, 
+              aes(pLDDT, ELISA_STATUS), 
+              alpha = 0.1) +
+  geom_point(data = filtered_out_df, 
+             aes(mean_pLDDT, ELISA_STATUS, shape = ID %in% ORDERED,
+                 size = proportion_above_70), 
+             col = "black", 
+             alpha = 0.8,
+             fill = "#56B4E9",
+             position = position_jitterdodge(jitter.width = 0.3, dodge.width = 0.8)) +
+  geom_point(data = potential_rescue_proteins, 
+             aes(mean_pLDDT, ELISA_STATUS, shape = ID %in% ORDERED,
+                 size = proportion_above_70),
+             col = "black",
+             fill = "#E69F00",
+             alpha = 0.8,
+             position = position_jitterdodge(jitter.width = 0.3, dodge.width = 0.8)) +
+  scale_shape_manual(values = c(21, 24)) +  # Here, shape 1 (circle) for FALSE and shape 2 (triangle) for TRUE
+  expand_limits(x=0, y=0) +
+  labs(y = "Rescue Ability") +
+  theme_cowplot(font_size = 20) +
+  # theme(legend.position = 0) +
+  scale_x_continuous(breaks = c(0, 50, 70, 100))
+
+proportion_over_70_long_plt
+
+ggsave(plot = proportion_over_70_long_plt, filename = paste0(save_to,"/Figure_proportion_over_70_long.svg"),
+       scale = 1,
+       units = "in",
+       height = 6,
+       width = 10)
+
+```
+
+### Check out pDockQ
+
+``` {r}
+MAIN <- MAIN %>%
+  group_by(QUERY) %>%
+  mutate(pDockQ = 0.707/1+exp(1))
+```
+
