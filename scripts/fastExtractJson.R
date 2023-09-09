@@ -119,19 +119,18 @@ for (FILE in FILES) {
   
 }
 
-# If you need to add to a larger df
-# add2Summary(NEW_DF = summaryWithRecycles,
-#             EXISTING_DF = "/Volumes/TAYLOR-LAB/Finn/CURATED_RESULTS/SUMMARIES/RECYCLES/MYD88_summaryWithRecycles.csv")
-# 
-# add2Summary(NEW_DF = summaryWithRecycles,
-#             EXISTING_DF = "/Volumes/TAYLOR-LAB/Finn/CURATED_RESULTS/SUMMARIES/RECYCLES/MYD88_summaryWithRecycles.csv")
-
 bigboy      <- fread(summaryWithRecycles, fill = T) %>% distinct(RECYCLE, .keep_all = T)
 bigboy$DATE <- sapply(strsplit(bigboy$RECYCLE, "_"), function(x) x[6])
 bigboy$DATE <- lubridate::as_date(bigboy$DATE)
-data.table::fwrite(bigboy, summaryWithRecycles, row.names = FALSE, append = T)
+data.table::fwrite(bigboy, summaryWithRecycles, row.names = FALSE, append = F)
+
+add2Summary(NEW_DF = summaryWithRecycles,
+            EXISTING_DF = "/Volumes/TAYLOR-LAB/Finn/CURATED_RESULTS/SUMMARIES/RECYCLES/MYD88_summaryWithRecycles.csv")
 
 smolboy <- bigboy %>% filter(!str_detect(RECYCLE, "_recycled_")) %>% distinct(RECYCLE, .keep_all = T)
-data.table::fwrite(smolboy, summary, row.names = FALSE, append = T)
+data.table::fwrite(smolboy, summary, row.names = FALSE, append = F)
+
+add2Summary(NEW_DF = summary,
+            EXISTING_DF = "/Volumes/TAYLOR-LAB/Finn/CURATED_RESULTS/SUMMARIES/MYD88.csv")
 
 rm(list = ls())

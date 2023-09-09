@@ -5,7 +5,7 @@ date: "`r format(Sys.time(), '%d %B %Y')`"
 output: html_document
 ---
 
-``` {r, warning = FALSE, message = FALSE, echo = FALSE}
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
 pacman::p_load(tidyverse,data.table,jsonlite,janitor,ggrepel,UniprotR,knitr,svglite,readxl,plotly,fs,stringr,purrr, ggalt)
 
 ################################################################################
@@ -15,6 +15,10 @@ theme_set(theme_bw())
 theme_update(panel.grid.minor = element_blank())
 ################################################################################
 
+source(file = ifelse(exists("https://raw.githubusercontent.com/tlobnow/myddosome_proteomics/main/scripts/functions.R"), 
+                     yes =  "https://raw.githubusercontent.com/tlobnow/myddosome_proteomics/main/scripts/functions.R",
+                     no  =  "~/Documents/Github/myddosome_proteomics/scripts/functions.R"))
+
 FILES_LOC  = "~/Documents/Github/master_thesis/"
 
 TIME_CHECK = fread(paste0(FILES_LOC, "summaries/TIME_CHECK.csv")) %>% 
@@ -22,9 +26,13 @@ TIME_CHECK = fread(paste0(FILES_LOC, "summaries/TIME_CHECK.csv")) %>%
                           KO != "NONE" ~ paste(PULLED_PROTEIN, "KO", KO, sep = " ")))
 TIME_CHECK$ORIGIN <- as.factor(TIME_CHECK$ORIGIN)
 
-# QUERY_RUN_SUMMARY       <- fread("~/Documents/Github/myddosome_proteomics/data/summaries/MYD88_summary_withRecycles.csv") %>% select(-V1) #%>%
-  # separate(FILE, into = c("FILE","rep"), sep = "_rep", extra = "merge", remove = T) %>%
-  # mutate(rep = as.numeric(rep))
+# QUERY_RUN_SUMMARY <- fread("~/Documents/Github/myddosome_proteomics/data/summaries/MYD88_summary_withRecycles.csv") %>% select(-V1) 
+QUERY_RUN_SUMMARY <- fread("/Volumes/TAYLOR-LAB/Finn/CURATED_RESULTS/SUMMARIES/RECYCLES/MYD88_summaryWithRecycles.csv") %>%
+  separate(FILE, into = c("FILE","rep"), sep = "_rep", extra = "merge", remove = T) %>%
+  mutate(rep = as.numeric(rep))
+
+QUERY_RUN_SUMMARY$MODEL <- sapply(strsplit(QUERY_RUN_SUMMARY$RECYCLE, "_"), function(x) x[2])
+
 QUERY_RUN_SUMMARY$QUERY <- unlist(lapply(strsplit(QUERY_RUN_SUMMARY$FILE, "_", fixed=TRUE), function(x) {
   if ("MYD88" %in% x && "MOUSE" %in% x) {
     return(x[4])
@@ -35,21 +43,70 @@ QUERY_RUN_SUMMARY$QUERY <- unlist(lapply(strsplit(QUERY_RUN_SUMMARY$FILE, "_", f
   }
 }))
 
+# Retain unique rows based on 'RECYCLE' column
+QUERY_RUN_SUMMARY <- QUERY_RUN_SUMMARY %>% distinct(RECYCLE, .keep_all = TRUE)
+QUERY_RUN_SUMMARY$DATE <- sapply(strsplit(QUERY_RUN_SUMMARY$RECYCLE, "_"), function(x) x[6])
+QUERY_RUN_SUMMARY$DATE <- lubridate::as_date(QUERY_RUN_SUMMARY$DATE)
+
+# Retain run ID from recycle
+# QUERY_RUN_SUMMARY$RUN_ID <- sapply(strsplit(QUERY_RUN_SUMMARY$RECYCLE, "_"), function(x) x[7])
+
+model_counts <- QUERY_RUN_SUMMARY %>%
+  group_by(QUERY, MODEL) %>%
+  filter(!str_detect(RECYCLE, "_recycled_")) %>%
+  summarise(n = n()) %>%
+  mutate(max_n = max(n)) %>%
+  pivot_wider(id_cols = c(QUERY, max_n), names_from = MODEL, values_from = n)
+
+# model_counts2 <- QUERY_RUN_SUMMARY %>%
+#   group_by(QUERY, MODEL, DATE) %>%
+#   filter(!str_detect(RECYCLE, "_recycled_")) %>%
+#   summarise(n = n()) %>%
+#   mutate(max_n = max(n)) #%>% pivot_wider(id_cols = c(QUERY, DATE, max_n), names_from = MODEL, values_from = n)
+# 
+# # Step 1: Create a "time block" for every 5 days
+# model_counts2 <- model_counts2 %>%
+#   mutate(DATE = as.Date(DATE)) %>%  # Convert to standard Date type
+#   arrange(QUERY, DATE) %>%
+#   group_by(QUERY) %>%
+#   mutate(time_block = cumsum(c(TRUE, diff(DATE) > 5)))
+
+# # Step 2: Group by QUERY and time_block
+# model_counts_grouped <- model_counts2 %>%
+#   group_by(QUERY, time_block) %>%
+#   summarise(
+#     min_date = min(DATE),
+#     max_date = max(DATE),
+#     total_models = sum(max_n, na.rm = TRUE))
+
+# # Step 2: Count the appearance of each model within each time block for each QUERY
+# model_counts2 <- model_counts2 %>%
+#   group_by(QUERY, time_block, MODEL) %>%
+#   mutate(model_count = row_number()) %>%
+#   ungroup()
+
+# Step 3: Assign a replicate number to each group
+# model_counts_grouped <- model_counts_grouped %>%
+#   mutate(replicate = row_number())
+
 ```
 
 ### Pulled Proteins
-``` {r}
+
+```{r}
 unq_protein_ids          <- TIME_CHECK %>% pull(Protein.IDs) %>% unique() %>% as.data.frame()
 unq_protein_ids_filtered <- unq_protein_ids %>% filter(!str_detect(., pattern = "CON__"))
 unq_protein_ids_filtered <- unlist(lapply(strsplit(unq_protein_ids_filtered$., ";", fixed=TRUE), function(x) return(x[1]))) %>%
   unique() %>% as.data.frame()
 
 # ========= Get the column containing unique protein IDs ===================== #
-all_protein_ids <- unique(unq_protein_ids_filtered$.)
+all_protein_ids <- unique(unq_protein_ids_filtered$.) %>% as.data.frame()
+fwrite(all_protein_ids, "~/Documents/Github/myddosome_proteomics/data/summaries/all_protein_ids.csv", sep = ",", row.names = F, col.names = F, append = F)
 ```
 
 ### Add annotations for pulled proteins
-``` {r}
+
+```{r}
 # === GO TERMS =============================================================== #
 # fetch_data <- function(id) {
 #   retries <- 3
@@ -129,31 +186,63 @@ all_protein_ids <- unique(unq_protein_ids_filtered$.)
 
 ### READ PROTEIN INFO DF
 
-``` {r}
-PROTEIN_INFO <- fread("~/Documents/Github/myddosome_proteomics/data/summaries/PROTEIN_INFO.csv")
+```{r}
+PROTEIN_INFO <- fread("~/Documents/Github/myddosome_proteomics/data/summaries/PROTEIN_INFO.csv") %>% select(1:24)
 PROTEIN_INFO <- rename(PROTEIN_INFO, QUERY = protein_id)
 ```
 
 ### MERGE WITH RUN SUMMARY
 
-``` {r}
+```{r}
 MAIN <- 
   left_join(QUERY_RUN_SUMMARY, PROTEIN_INFO, by = "QUERY") %>% 
   mutate(Confidence = case_when(iScore < 0.4 ~ "Low",
                                 iScore >= 0.4 & iScore < 0.5 ~ "Medium",
                                 iScore >= 0.5 & iScore < 0.7 ~ "High",
-                                TRUE ~ "Very High"))
+                                TRUE ~ "Very High"),
+         Clash_Indicator = iRes/iCnt) %>%
+  filter(!is.na(Entry))
 
 MAIN_SUBSET <- MAIN %>% 
   group_by(Entry.Name) %>%
   filter(iScore == max(iScore))
 
 FOLDER = "MYD88"
+
+```
+
+``` {r}
+
+FENJA_SIGNIF_FILTERED <- TIME_CHECK %>% 
+  filter((`-LOG(P-value)` > 2) & (Difference > 1) & (Significant == T) & (KO == "NONE"), 
+         SIGNIF_CLASS == "SIGNIFICANT")
+
+FENJA_SIGNIF_FILTERED %>%
+  ggplot(aes(PULLED_PROTEIN, fill=PULLED_PROTEIN)) +
+  geom_bar() +
+  facet_grid(~as.factor(ORIGIN), scales = "free_y") +
+  theme(legend.position = "none")
+
+# HOW FENJA FILTERED THE PROTEINS
+MYD88.cnt <- FENJA_SIGNIF_FILTERED %>% filter(PULLED_PROTEIN == "MYD88") %>% group_by(ORIGIN) %>% count()
+kable(MYD88.cnt, caption = "Filtered Proteins pulled down with MyD88 per time point")
+
+IRAK4.cnt <- FENJA_SIGNIF_FILTERED %>% filter(PULLED_PROTEIN == "IRAK4") %>% group_by(ORIGIN) %>% count()
+kable(IRAK4.cnt, caption = "Filtered Proteins pulled down with IRAK4 per time point")
+
+
+IRAK1 <- FENJA_SIGNIF_FILTERED %>% filter(PULLED_PROTEIN == "IRAK1") %>% pull(Protein.IDs) %>% unique() %>% as.data.frame()
+IRAK1_filtered <- IRAK1 %>% filter(!str_detect(., pattern = "CON__"))
+IRAK1_filtered <- unlist(lapply(strsplit(IRAK1_filtered$., ";", fixed=TRUE), function(x) return(x[1]))) %>%
+  unique() %>% as.data.frame()
+
+IRAK1.cnt <- FENJA_SIGNIF_FILTERED %>% filter(PULLED_PROTEIN == "IRAK1") %>% group_by(ORIGIN) %>% count()
+kable(IRAK1.cnt, caption = "Filtered Proteins pulled down with IRAK1 per time point")
 ```
 
 ### PLOT
 
-``` {r}
+```{r}
 MAIN_PLOT <- MAIN %>% group_by(QUERY) %>%
   ggplot(aes(iScore, piTM, label = Entry.Name)) +
   geom_abline(col = "gray") +
@@ -177,8 +266,9 @@ MAIN_PLOT <- MAIN %>% group_by(QUERY) %>%
 # ggplotly(MAIN_PLOT)
 ```
 
-``` {r}
+```{r}
 MAIN_SUBSET_PLOT <- MAIN_SUBSET %>% group_by(QUERY) %>%
+  filter(Clash_Indicator > 0.4) %>%
   ggplot(aes(iScore, piTM, label = Entry.Name)) +
   geom_abline(col = "gray") +
   geom_point(aes(col = Confidence), size = 3) +  # Use the new Confidence variable here
@@ -201,46 +291,20 @@ MAIN_SUBSET_PLOT <- MAIN_SUBSET %>% group_by(QUERY) %>%
 ggplotly(MAIN_SUBSET_PLOT)
 ```
 
-### CANDIDATES THAT PASS CONFIDENCE THRESHOLD ≥ 0.4
+### FILTERED FOR CLASH SCORE
 ``` {r}
-unq_protein_ids_above_threshold     <- MAIN        %>% filter(iScore >=0.4) %>% pull(QUERY) %>% unique() %>% as.data.frame()
-unq_protein_ids_above_threshold_sub <- MAIN_SUBSET %>% filter(iScore >=0.4) %>% pull(QUERY) %>% unique() %>% as.data.frame()
-fwrite(unq_protein_ids_above_threshold, "~/Documents/Github/myddosome_proteomics/data/summaries/unq_protein_ids_above_threshold.csv", sep = ",", row.names = F, col.names = F)
-```
-
-### FOLLOW GOOD CANDIDATES
-``` {r}
-unq_protein_ids_above_threshold_SUBSET <- MAIN %>% 
-  # filter(!str_detect(RECYCLE, pattern = "_recycled_")) %>%
-  # mutate(DATE_2 = ifelse(MODEL == 5, DATE, DATE)) %>%
-  # mutate(DATE_2 = ifelse(is.na(DATE_2), first(DATE_2, order_by = MODEL, na.rm = TRUE), DATE_2)) %>%
-  mutate(rep = as.factor(case_when(as.character(as.IDate(DATE)) < "2023-07-07" ~ 2, TRUE ~ 1))) %>%
-  ungroup() %>%
-  # group_by(QUERY, DATE_2) %>%
-  group_by(QUERY, rep) %>%
-  filter(QUERY %in% unq_protein_ids_above_threshold$.,
-         iScore == max(iScore),
-         !is.na(Entry)) %>%
-  ungroup(rep) %>%
-  mutate(DIFF_SCORE = max(iScore)-min(iScore),
-         DATE = as.character(as.IDate(DATE)),
-         # DATE_2 = as.character(as.IDate(DATE_2))
-         ) %>% 
-  filter(DIFF_SCORE < .2)
-
-unq_protein_ids_above_threshold_PLOT <- unq_protein_ids_above_threshold_SUBSET %>% 
-  group_by(QUERY) %>%
+MAIN_SUBSET_PLOT <- MAIN_SUBSET %>% group_by(QUERY) %>%
+  filter(Clash_Indicator > 0.4) %>%
   ggplot(aes(iScore, piTM, label = Entry.Name)) +
   geom_abline(col = "gray") +
-  geom_point(aes(col = DIFF_SCORE, label = rep, shape = rep,
-                 text = paste("iScore:", iScore,
-                              "<br>piTM:", piTM,
-                              "<br>Entry Name:", Entry.Name,
-                              "<br>Gene:",Gene.Names..primary.,
-                              "<br>Date:", DATE,
-                              "<br>rep:", rep)), size = 3) +
-  scale_color_gradient(low = "red", high = "lightgray") +  # Add this line for the color gradient
-  geom_line(aes(group = QUERY, col = DIFF_SCORE)) +
+  geom_point(aes(col = Confidence, size = Clash_Indicator^2)#, size = 3
+             ) +  # Use the new Confidence variable here
+  scale_color_manual(name = "Confidence",
+                     values = c("Low" = "gray80",
+                                "Medium" = "gray40",
+                                "High" = "cornflowerblue",
+                                "Very High" = "lightgreen")) +
+  ggrepel::geom_label_repel(data = MAIN, show.legend = F) +
   ggtitle(paste0('Computational screening for PPI partners of ', FOLDER)) +
   expand_limits(x=c(0,1), y=c(0,1)) +
   geom_vline(xintercept = 0.4, col = "gray40", linetype = "dotted", linewidth = 1) +
@@ -249,15 +313,296 @@ unq_protein_ids_above_threshold_PLOT <- unq_protein_ids_above_threshold_SUBSET %
   annotate("text", x = 0.4, y = -0.05, label = "medium \n confidence") +
   annotate("text", x = 0.5, y = -0.05, label = "high \n confidence") +
   annotate("text", x = 0.7, y = -0.05, label = "very high \n confidence") +
-  theme(legend.position = "bottom") +
-  facet_wrap(Gene.Names..primary.~Entry.Name)
+  theme(legend.position = "none")
   
-# ggplotly(unq_protein_ids_above_threshold_PLOT, tooltip = "text")
-unq_protein_ids_above_threshold_PLOT
+ggplotly(MAIN_SUBSET_PLOT)
 ```
 
+### CANDIDATES THAT PASS CONFIDENCE THRESHOLD ≥ 0.4
+
+```{r}
+unq_protein_ids_above_threshold <- MAIN %>% filter(iScore >=0.4, !is.na(Entry)) %>% pull(QUERY) %>% unique() %>% as.data.frame()
+fwrite(unq_protein_ids_above_threshold, "~/Documents/Github/myddosome_proteomics/data/summaries/unq_protein_ids_above_threshold.csv", sep = ",", row.names = F, col.names = F)
+
+unq_protein_ids_above_threshold2 <- MAIN %>% filter(iScore >=0.4, !is.na(Entry)) %>% select(QUERY, Entry.Name, Gene.Names..primary., Function..CC.) %>% unique() %>% as.data.frame()
+fwrite(unq_protein_ids_above_threshold2, "~/Documents/Github/myddosome_proteomics/data/summaries/unq_protein_ids_above_threshold_detail.csv", sep = ",", row.names = F, col.names = T, append = F)
+
+unq_protein_ids_high_conf <- MAIN %>% filter(iScore >=0.4, !is.na(Entry), Confidence == "High") %>% select(QUERY, Entry.Name, Gene.Names..primary., Function..CC.) %>% unique() %>% as.data.frame()
+fwrite(unq_protein_ids_high_conf, "~/Documents/Github/myddosome_proteomics/data/summaries/unq_protein_ids_high_conf.csv", sep = ",", row.names = F, col.names = T, append = F)
+
+unq_protein_ids_medium_conf <- MAIN %>% filter(iScore >=0.4, !is.na(Entry), Confidence == "Medium") %>% select(QUERY, Entry.Name, Gene.Names..primary., Function..CC.) %>% unique() %>% as.data.frame()
+fwrite(unq_protein_ids_medium_conf, "~/Documents/Github/myddosome_proteomics/data/summaries/unq_protein_ids_medium_conf.csv", sep = ",", row.names = F, col.names = T, append = F)
+
+```
+
+### FOLLOW GOOD CANDIDATES
+
+```{r, warning=FALSE}
+MAIN$rep        <- as.factor(MAIN$rep)
+MAIN_SUBSET$rep <- as.factor(MAIN_SUBSET$rep)
+
+# define unq_protein_ids_above_threshold_FULL
+unq_protein_ids_above_threshold_FULL <- MAIN %>% 
+  group_by(QUERY) %>%
+  filter(QUERY %in% unq_protein_ids_above_threshold$.,
+         # !str_detect(RECYCLE, pattern = "_recycled_"),
+         !is.na(Entry)) %>%
+  ungroup(rep) %>%
+  mutate(DATE = as.character(as.IDate(DATE)))
+
+# define unq_protein_ids_above_threshold_SUBSET
+unq_protein_ids_above_threshold_SUBSET <- MAIN %>% 
+  group_by(QUERY) %>%
+  filter(QUERY %in% unq_protein_ids_above_threshold$.,
+         iScore == max(iScore),
+         !is.na(Entry)) %>%
+  ungroup(rep) %>%
+  mutate(DIFF_SCORE = max(iScore)-min(iScore),
+         DATE = as.character(as.IDate(DATE))) %>% 
+  filter(DIFF_SCORE < .2)
+
+# plot
+unq_protein_ids_above_threshold_PLOT <- unq_protein_ids_above_threshold_SUBSET %>% 
+  group_by(QUERY) %>%
+  ggplot(aes(iScore, piTM, label = Entry.Name)) +
+  geom_abline(col = "gray") +
+  geom_encircle(data = unq_protein_ids_above_threshold_FULL,
+            aes(group = QUERY, fill = QUERY),
+            alpha = 0.5, 
+            show.legend = F) +
+  geom_point(data = unq_protein_ids_above_threshold_FULL, col = "gray40") +
+  geom_point(aes(group = QUERY,
+                 text = paste("iScore:", iScore,
+                              "<br>piTM:", piTM,
+                              "<br>Entry Name:", Entry.Name,
+                              "<br>Gene:",Gene.Names..primary.,
+                              "<br>Date:", DATE,
+                              "<br>rep:", rep)), size = 3, col = "salmon") +
+  # scale_color_gradient(low = "red", high = "lightgray") +  # Add this line for the color gradient
+  ggtitle(paste0('Computational screening for PPI partners of ', FOLDER)) +
+  expand_limits(x=c(0,1), y=c(0,1)) +
+  geom_vline(xintercept = 0.4, col = "gray40", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.5, col = "cornflowerblue", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.7, col = "lightgreen", linetype = "dotted", linewidth = 1) +
+  annotate("text", x = 0.4, y = -0.05, label = "medium \n confidence") +
+  annotate("text", x = 0.5, y = -0.05, label = "high \n confidence") +
+  annotate("text", x = 0.7, y = -0.05, label = "very high \n confidence") +
+  theme(legend.position = "bottom") + 
+  facet_wrap(~Gene.Names..primary.)
+
+# ggplotly(unq_protein_ids_above_threshold_PLOT, tooltip = "text")
+unq_protein_ids_above_threshold_PLOT
+
+ggsave(plot = unq_protein_ids_above_threshold_PLOT,
+         filename = paste0("~/Documents/Github/myddosome_proteomics/data/figures/unq_protein_ids_above_threshold_PLOT.svg"),
+       scale = 1,
+       units = "in",
+       height = 24,
+       width = 40)
+```
+
+### extract plots for proteins of interest
 
 ``` {r}
+
+for (ID in unq_protein_ids_above_threshold_SUBSET$FILE) {
+  subset_df = MAIN %>%
+    filter(FILE == ID,
+           !str_detect(RECYCLE, pattern = "_recycled_"))
+  
+  max_iScore_ID <- MAIN %>%
+  filter(FILE == ID,
+         !str_detect(RECYCLE, pattern = "_recycled_")) %>%
+  group_by(as.factor(DATE)) %>%
+  slice_max(order_by = iScore, n = 1) %>%
+  ungroup()
+  
+  
+  plt_by_ID <- subset_df %>% 
+    ggplot(aes(iScore, piTM, label = Entry.Name)) +
+    geom_abline(col = "gray") +
+    geom_line(data = subset_df,
+            aes(group = as.factor(DATE), 
+                col = as.factor(DATE)),
+            alpha = 0.5, 
+            show.legend = F) +
+    geom_point(data = subset_df, size = 3,
+             aes(col = as.factor(DATE)),
+             alpha = 0.5, 
+             show.legend = F) +
+    geom_point(data = max_iScore_ID, 
+             aes(fill = as.factor(DATE)), 
+             col = "black",
+             size = 4, shape = 21) +
+  ggtitle(paste0('Computational screening of MYD88 vs. ', unique(subset_df$Entry.Name))) +
+  expand_limits(x=c(0,1), y=c(0,1)) +
+  geom_vline(xintercept = 0.4, col = "gray40", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.5, col = "cornflowerblue", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.7, col = "lightgreen", linetype = "dotted", linewidth = 1) +
+  annotate("text", x = 0.4, y = -0.05, label = "medium \n confidence") +
+  annotate("text", x = 0.5, y = -0.05, label = "high \n confidence") +
+  annotate("text", x = 0.7, y = -0.05, label = "very high \n confidence") +
+  theme(legend.position = "bottom") +
+  labs(fill = "DATE")  # Setting the legend title for the fill aesthetic
+  
+  plt_by_ID
+
+  ggsave(plot = plt_by_ID,
+         filename = paste0("~/Documents/Github/myddosome_proteomics/data/figures/",ID,".svg"),
+       scale = 1,
+       units = "in",
+       height = 6,
+       width = 10)
+}
+
+
+```
+
+``` {r}
+for (ID in unq_protein_ids_above_threshold_SUBSET$FILE) {
+  subset_df = MAIN %>%
+    filter(FILE == ID)
+  
+  max_iScore_ID <- MAIN %>%
+  filter(FILE == ID) %>%
+  group_by(as.factor(DATE)) %>%
+  slice_max(order_by = iScore, n = 1) %>%
+  ungroup()
+  
+  
+  plt_by_ID <- subset_df %>% 
+    ggplot(aes(iScore, piTM, label = Entry.Name)) +
+    geom_abline(col = "gray") +
+    geom_encircle(data = subset_df,
+            aes(group = as.factor(DATE), 
+                fill = as.factor(DATE)),
+            alpha = 0.1, 
+            show.legend = F) +
+    geom_point(data = subset_df, size = 3,
+             aes(col = as.factor(DATE)),
+             alpha = 0.5, 
+             show.legend = F) +
+    geom_point(data = max_iScore_ID, 
+             aes(fill = as.factor(DATE)), 
+             col = "black",
+             size = 4, shape = 21) +
+  ggtitle(paste0('Computational screening of MYD88 vs. ', unique(subset_df$Entry.Name))) +
+  expand_limits(x=c(0,1), y=c(0,1)) +
+  geom_vline(xintercept = 0.4, col = "gray40", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.5, col = "cornflowerblue", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.7, col = "lightgreen", linetype = "dotted", linewidth = 1) +
+  annotate("text", x = 0.4, y = -0.05, label = "medium \n confidence") +
+  annotate("text", x = 0.5, y = -0.05, label = "high \n confidence") +
+  annotate("text", x = 0.7, y = -0.05, label = "very high \n confidence") +
+  theme(legend.position = "bottom") +
+  labs(fill = "DATE")  # Setting the legend title for the fill aesthetic
+  
+  plt_by_ID
+
+  ggsave(plot = plt_by_ID,
+         filename = paste0("~/Documents/Github/myddosome_proteomics/data/figures/",ID,"_FULL.svg"),
+       scale = 1,
+       units = "in",
+       height = 6,
+       width = 10)
+}
+```
+
+``` {r}
+for (ID in unq_protein_ids_above_threshold_SUBSET$FILE) {
+  subset_df = MAIN %>%
+    filter(FILE == ID)
+  
+  max_iScore_ID <- MAIN %>%
+  filter(FILE == ID) %>%
+  group_by(as.factor(DATE)) %>%
+  slice_max(order_by = iScore, n = 1) %>%
+  ungroup()
+  
+  
+  plt_by_ID <- subset_df %>% 
+    ggplot(aes(iScore, piTM, label = Entry.Name)) +
+    geom_abline(col = "gray") +
+    geom_point(data = subset_df, size = 2, aes(col = as.factor(DATE)), alpha = 0.3,  show.legend = F) +
+    geom_point(data = max_iScore_ID, aes(fill = as.factor(DATE)), col = "black", size = 4, shape = 21) +
+    geom_density_2d(data = subset_df, show.legend = F, alpha = 0.5) +
+    ggtitle(paste0('Computational screening of MYD88 vs. ', unique(subset_df$Entry.Name))) +
+    expand_limits(x=c(0,1), y=c(0,1)) +
+    geom_vline(xintercept = 0.4, col = "gray40", linetype = "dotted", linewidth = 1) +
+    geom_vline(xintercept = 0.5, col = "cornflowerblue", linetype = "dotted", linewidth = 1) +
+    geom_vline(xintercept = 0.7, col = "lightgreen", linetype = "dotted", linewidth = 1) +
+    annotate("text", x = 0.4, y = -0.05, label = "medium \n confidence") +
+    annotate("text", x = 0.5, y = -0.05, label = "high \n confidence") +
+    annotate("text", x = 0.7, y = -0.05, label = "very high \n confidence") +
+    theme(legend.position = "bottom") +
+    labs(fill = "DATE")  # Setting the legend title for the fill aesthetic
+  
+  plt_by_ID
+
+  ggsave(plot = plt_by_ID,
+         filename = paste0("~/Documents/Github/myddosome_proteomics/data/figures/",ID,"_DENSITY.svg"),
+       scale = 1,
+       units = "in",
+       height = 6,
+       width = 10)
+}
+```
+
+### Plot Tubulin
+
+```{r}
+
+ID = "MYD88_MOUSE_x1_P68373_x1"
+
+subset_df = MAIN %>%
+    filter(FILE == ID,
+           !str_detect(RECYCLE, pattern = "_recycled_"))
+  
+max_iScore_ID <- MAIN %>%
+  filter(FILE == ID, !str_detect(RECYCLE, "_recycled_")) %>%
+  group_by(as.factor(rep)) %>%
+  slice_max(order_by = iScore, n = 1) %>%
+  ungroup()
+  
+  
+plt_by_ID <- subset_df %>% 
+    ggplot(aes(iScore, piTM, label = Entry.Name)) +
+    geom_abline(col = "gray") +
+    geom_line(data = subset_df,
+            aes(group = as.factor(rep), 
+                col = as.factor(rep)),
+            alpha = 0.5, 
+            show.legend = F) +
+    geom_point(data = subset_df, size = 3,
+             aes(col = as.factor(rep)),
+             alpha = 0.5, 
+             show.legend = F) +
+    geom_point(data = max_iScore_ID, 
+             aes(fill = as.factor(rep)), 
+             col = "black",
+             size = 4, shape = 21) +
+  ggtitle(paste0('Computational screening of MYD88 vs. ', unique(subset_df$Entry.Name))) +
+  expand_limits(x=c(0,1), y=c(0,1)) +
+  geom_vline(xintercept = 0.4, col = "gray40", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.5, col = "cornflowerblue", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.7, col = "lightgreen", linetype = "dotted", linewidth = 1) +
+  annotate("text", x = 0.4, y = -0.05, label = "medium \n confidence") +
+  annotate("text", x = 0.5, y = -0.05, label = "high \n confidence") +
+  annotate("text", x = 0.7, y = -0.05, label = "very high \n confidence") +
+  theme(legend.position = "0") +
+  labs(fill = "rep")  # Setting the legend title for the fill aesthetic
+  
+plt_by_ID
+
+ggsave(plot = plt_by_ID,
+         filename = paste0("~/Documents/Github/myddosome_proteomics/data/figures/",ID,".svg"),
+       scale = 1,
+       units = "in",
+       height = 6,
+       width = 10)
+```
+
+```{r}
 library(dplyr)
 
 # Calculate the proportion of models with pLDDT > 70 for each protein
@@ -352,9 +697,8 @@ ggsave(plot = proportion_over_70_long_plt, filename = paste0(save_to,"/Figure_pr
 
 ### Check out pDockQ
 
-``` {r}
+```{r}
 MAIN <- MAIN %>%
   group_by(QUERY) %>%
   mutate(pDockQ = 0.707/1+exp(1))
 ```
-
