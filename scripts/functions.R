@@ -266,3 +266,17 @@ ELISA_Fx <- function(Input_Directory, Output_Directory) {
 correct_colnames <- function(DF) {
   colnames(DF) <- gsub(" ", ".", colnames(DF))
 }
+
+add2Summary <- function(NEW_DF, EXISTING_DF) {
+  # read dataframes
+  existing_df <- fread(EXISTING_DF)
+  new_df      <- fread(NEW_DF)
+  
+  # Combine the two data frames
+  combined_df <- rbind(existing_df, new_df, fill = T)
+  
+  unq <- combined_df %>% distinct(RECYCLE, .keep_all = TRUE)
+  
+  # Write to the existing CSV
+  fwrite(combined_df, EXISTING_DF, row.names = F, sep = ",")
+}
