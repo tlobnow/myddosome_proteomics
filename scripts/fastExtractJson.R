@@ -13,6 +13,7 @@ source(file = ifelse(exists("https://raw.githubusercontent.com/tlobnow/myddosome
 LOC = "TEMP"
 # MAIN    = file.path("/Volumes/TAYLOR-LAB/Finn/CURATED_RESULTS", LOC, "/")
 # MAIN    = file.path("/Volumes/TAYLOR-LAB/Finn/RESULTS/IP_MS_2/", LOC, "/")
+# MAIN    = file.path("/Users/u_lobnow/Documents/Github/", LOC, "/")
 MAIN    = file.path("/Users/u_lobnow/Documents/Github/transferGit/", LOC, "/")
 
 SUMMARY_FOLDER = "/Volumes/TAYLOR-LAB/Finn/CURATED_RESULTS/SUMMARIES/"
@@ -120,7 +121,9 @@ for (FILE in FILES) {
 }
 
 bigboy      <- fread(summaryWithRecycles, fill = T) %>% distinct(RECYCLE, .keep_all = T)
-bigboy$DATE <- sapply(strsplit(bigboy$RECYCLE, "_"), function(x) x[6])
+bigboy$DATE <- ifelse(test = str_detect(bigboy$RECYCLE, pattern = "multimer"), 
+                      yes = sapply(strsplit(bigboy$RECYCLE, "_"), function(x) x[6]),
+                      no = sapply(strsplit(bigboy$RECYCLE, "_"), function(x) x[5]))
 bigboy$DATE <- lubridate::as_date(bigboy$DATE)
 data.table::fwrite(bigboy, summaryWithRecycles, row.names = FALSE, append = F)
 

@@ -225,10 +225,10 @@ FENJA_SIGNIF_FILTERED %>%
 
 # HOW FENJA FILTERED THE PROTEINS
 MYD88.cnt <- FENJA_SIGNIF_FILTERED %>% filter(PULLED_PROTEIN == "MYD88") %>% group_by(ORIGIN) %>% count()
-kable(MYD88.cnt, caption = "Filtered Proteins pulled down with MyD88 per time point")
+# kable(MYD88.cnt, caption = "Filtered Proteins pulled down with MyD88 per time point")
 
 IRAK4.cnt <- FENJA_SIGNIF_FILTERED %>% filter(PULLED_PROTEIN == "IRAK4") %>% group_by(ORIGIN) %>% count()
-kable(IRAK4.cnt, caption = "Filtered Proteins pulled down with IRAK4 per time point")
+# kable(IRAK4.cnt, caption = "Filtered Proteins pulled down with IRAK4 per time point")
 
 
 IRAK1 <- FENJA_SIGNIF_FILTERED %>% filter(PULLED_PROTEIN == "IRAK1") %>% pull(Protein.IDs) %>% unique() %>% as.data.frame()
@@ -237,10 +237,10 @@ IRAK1_filtered <- unlist(lapply(strsplit(IRAK1_filtered$., ";", fixed=TRUE), fun
   unique() %>% as.data.frame()
 
 IRAK1.cnt <- FENJA_SIGNIF_FILTERED %>% filter(PULLED_PROTEIN == "IRAK1") %>% group_by(ORIGIN) %>% count()
-kable(IRAK1.cnt, caption = "Filtered Proteins pulled down with IRAK1 per time point")
+# kable(IRAK1.cnt, caption = "Filtered Proteins pulled down with IRAK1 per time point")
 ```
 
-### PLOT
+### PLOT ALL
 
 ```{r}
 MAIN_PLOT <- MAIN %>% group_by(QUERY) %>%
@@ -266,9 +266,10 @@ MAIN_PLOT <- MAIN %>% group_by(QUERY) %>%
 # ggplotly(MAIN_PLOT)
 ```
 
+### PLOT SUBSET
+
 ```{r}
 MAIN_SUBSET_PLOT <- MAIN_SUBSET %>% group_by(QUERY) %>%
-  filter(Clash_Indicator > 0.4) %>%
   ggplot(aes(iScore, piTM, label = Entry.Name)) +
   geom_abline(col = "gray") +
   geom_point(aes(col = Confidence), size = 3) +  # Use the new Confidence variable here
@@ -277,7 +278,6 @@ MAIN_SUBSET_PLOT <- MAIN_SUBSET %>% group_by(QUERY) %>%
                                 "Medium" = "gray40",
                                 "High" = "cornflowerblue",
                                 "Very High" = "lightgreen")) +
-  ggrepel::geom_label_repel(data = MAIN, show.legend = F) +
   ggtitle(paste0('Computational screening for PPI partners of ', FOLDER)) +
   expand_limits(x=c(0,1), y=c(0,1)) +
   geom_vline(xintercept = 0.4, col = "gray40", linetype = "dotted", linewidth = 1) +
@@ -291,20 +291,20 @@ MAIN_SUBSET_PLOT <- MAIN_SUBSET %>% group_by(QUERY) %>%
 ggplotly(MAIN_SUBSET_PLOT)
 ```
 
-### FILTERED FOR CLASH SCORE
+### PLOT SUBSET WITH ADDITIONAL FILTER FOR CLASH SCORE (size)
 ``` {r}
-MAIN_SUBSET_PLOT <- MAIN_SUBSET %>% group_by(QUERY) %>%
-  filter(Clash_Indicator > 0.4) %>%
+MAIN_SUBSET_filtered_for_clash_indicator <- MAIN_SUBSET %>% group_by(QUERY) %>% filter(Clash_Indicator > 0.4)
+
+MAIN_SUBSET_filtered_for_clash_indicator_PLT <- MAIN_SUBSET_filtered_for_clash_indicator %>% 
+  group_by(QUERY) %>%
   ggplot(aes(iScore, piTM, label = Entry.Name)) +
   geom_abline(col = "gray") +
-  geom_point(aes(col = Confidence, size = Clash_Indicator^2)#, size = 3
-             ) +  # Use the new Confidence variable here
+  geom_point(aes(col = Confidence, size = Clash_Indicator)) +  # Use the new Confidence variable here
   scale_color_manual(name = "Confidence",
                      values = c("Low" = "gray80",
                                 "Medium" = "gray40",
                                 "High" = "cornflowerblue",
                                 "Very High" = "lightgreen")) +
-  ggrepel::geom_label_repel(data = MAIN, show.legend = F) +
   ggtitle(paste0('Computational screening for PPI partners of ', FOLDER)) +
   expand_limits(x=c(0,1), y=c(0,1)) +
   geom_vline(xintercept = 0.4, col = "gray40", linetype = "dotted", linewidth = 1) +
@@ -315,13 +315,15 @@ MAIN_SUBSET_PLOT <- MAIN_SUBSET %>% group_by(QUERY) %>%
   annotate("text", x = 0.7, y = -0.05, label = "very high \n confidence") +
   theme(legend.position = "none")
   
-ggplotly(MAIN_SUBSET_PLOT)
+ggplotly(MAIN_SUBSET_filtered_for_clash_indicator_PLT)
+
 ```
 
 ### CANDIDATES THAT PASS CONFIDENCE THRESHOLD ≥ 0.4
 
 ```{r}
 unq_protein_ids_above_threshold <- MAIN %>% filter(iScore >=0.4, !is.na(Entry)) %>% pull(QUERY) %>% unique() %>% as.data.frame()
+
 fwrite(unq_protein_ids_above_threshold, "~/Documents/Github/myddosome_proteomics/data/summaries/unq_protein_ids_above_threshold.csv", sep = ",", row.names = F, col.names = F)
 
 unq_protein_ids_above_threshold2 <- MAIN %>% filter(iScore >=0.4, !is.na(Entry)) %>% select(QUERY, Entry.Name, Gene.Names..primary., Function..CC.) %>% unique() %>% as.data.frame()
@@ -335,7 +337,82 @@ fwrite(unq_protein_ids_medium_conf, "~/Documents/Github/myddosome_proteomics/dat
 
 ```
 
-### FOLLOW GOOD CANDIDATES
+### FOLLOW GOOD CANDIDATES WITHOUT RECYCLES
+
+``` {r}
+# Convert 'rep' to factor type in MAIN and MAIN_SUBSET
+MAIN$rep <- as.factor(MAIN$rep)
+MAIN_SUBSET$rep <- as.factor(MAIN_SUBSET$rep)
+
+# Define unique protein IDs above threshold without recycled items
+unq_protein_ids_above_threshold <- MAIN %>% 
+  filter(iScore >= 0.4, !is.na(Entry), !str_detect(RECYCLE, pattern = "_recycled_")) %>% 
+  pull(QUERY) %>% 
+  unique() %>% 
+  as.data.frame()
+
+# Define unique protein IDs above threshold, full set
+unq_protein_ids_above_threshold_FULL <- MAIN %>% 
+  group_by(QUERY) %>%
+  filter(QUERY %in% unq_protein_ids_above_threshold$.,
+         !str_detect(RECYCLE, pattern = "_recycled_"),
+         !is.na(Entry)) %>% 
+  ungroup() %>%
+  mutate(DATE = as.character(as.IDate(DATE)))
+
+# Define unique protein IDs above threshold, subset with max iScore
+unq_protein_ids_above_threshold_SUBSET <- MAIN %>% 
+  filter(!str_detect(RECYCLE, pattern = "_recycled_"),
+         !is.na(Entry)) %>%
+  group_by(QUERY) %>%
+  filter(QUERY %in% unq_protein_ids_above_threshold$.,
+         iScore == max(iScore)) %>%
+  ungroup() %>%
+  mutate(DIFF_SCORE = max(iScore) - min(iScore),
+         DATE = as.character(as.IDate(DATE)))
+
+# Generate the plot
+unq_protein_ids_above_threshold_PLOT <- ggplot(data = unq_protein_ids_above_threshold_SUBSET, 
+                                              aes(x = iScore, y = piTM, label = Entry.Name)) +
+  geom_abline(col = "gray") +
+  # geom_encircle(data = unq_protein_ids_above_threshold_FULL, aes(group = QUERY, fill = QUERY), alpha = 0.5, show.legend = F) +
+  geom_point(data = unq_protein_ids_above_threshold_FULL, col = "gray40") +
+  geom_point(aes(group = QUERY, text = paste("iScore:", iScore, "<br>piTM:", piTM,
+                                             "<br>Entry Name:", Entry.Name, "<br>Gene:", Gene.Names..primary.,
+                                             "<br>Date:", DATE, "<br>rep:", rep)),
+             size = 3, col = "salmon") +
+  ggtitle(paste0('Computational screening for PPI partners of ', FOLDER)) +
+  expand_limits(x = c(0, 1), y = c(0, 1)) +
+  geom_vline(xintercept = 0.4, col = "gray40", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.5, col = "cornflowerblue", linetype = "dotted", linewidth = 1) +
+  geom_vline(xintercept = 0.7, col = "lightgreen", linetype = "dotted", linewidth = 1) +
+  annotate("text", x = 0.4, y = -0.05, label = "medium \n confidence") +
+  annotate("text", x = 0.5, y = -0.05, label = "high \n confidence") +
+  annotate("text", x = 0.7, y = -0.05, label = "very high \n confidence") +
+  theme(legend.position = "bottom") + 
+  facet_wrap(~Gene.Names..primary.)
+
+# Show the plot
+unq_protein_ids_above_threshold_PLOT
+
+```
+``` {r}
+iscore_histo <- MAIN %>%
+  group_by(QUERY) %>%
+  mutate(mean_plddt = mean(pLDDT)) %>%
+  filter(Clash_Indicator > 0.4,
+         # mean_plddt > 70
+         ) %>%
+  filter(iScore == max(iScore))
+
+iscore_histo %>%
+  ggplot(aes(iScore)) +
+  geom_histogram() +
+  expand_limits(x=c(0.1,1), y=c(0.1,1))
+  
+
+```
+
 
 ```{r, warning=FALSE}
 MAIN$rep        <- as.factor(MAIN$rep)
