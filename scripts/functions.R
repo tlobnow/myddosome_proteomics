@@ -473,13 +473,22 @@ plot_alphafold_results <- function(LOC, SUMMARY_FOLDER = NULL, xlab = "iScore", 
     plot_title = paste0("AlphaFold Results for ", LOC)
   }
   
-  plot <- DF %>%
-    ggplot() +
-    geom_abline(col = "gray") +
-    geom_point(aes(iScore, piTM, color = FILE)) +
-    geom_point(data = max_iScore, aes(iScore, piTM, color = FILE), size = 4) +
-    expand_limits(x = c(0.01, 1), y = c(0.01, 1)) +
-    labs(x = xlab, y = ylab, title = plot_title)
+  # Check number of unique FILE names
+  if (length(unique(DF$FILE)) > 10) {
+    plot <- ggplot(DF) +
+      geom_abline(col = "gray") +
+      geom_point(aes(iScore, piTM)) +
+      geom_point(data = max_iScore, aes(iScore, piTM), size = 4) +
+      expand_limits(x = c(0.01, 1), y = c(0.01, 1)) +
+      labs(x = xlab, y = ylab, title = plot_title)
+  } else {
+    plot <- ggplot(DF) +
+      geom_abline(col = "gray") +
+      geom_point(aes(iScore, piTM, color = FILE)) +
+      geom_point(data = max_iScore, aes(iScore, piTM, color = FILE), size = 4) +
+      expand_limits(x = c(0.01, 1), y = c(0.01, 1)) +
+      labs(x = xlab, y = ylab, title = plot_title)
+  }
   
   return(plot)
 }
