@@ -324,7 +324,7 @@ add2Summary <- function(NEW_DF, EXISTING_DF) {
 ################################################################################
 
 run_extraction <- function(LOC, MAIN = NULL, SUMMARY_FOLDER = NULL, ADD_2_EXISTING_DF = F, EXISTING_DF = NULL) {
-  
+  pacman::p_load(dplyr, tidyr, stringr, fs, jsonlite, purrr, utils, data.table)
   if (is.null(MAIN)) {
     MAIN <- paste0("/Volumes/TAYLOR-LAB/Finn/CURATED_RESULTS/", LOC, "/")
   }
