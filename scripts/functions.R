@@ -462,7 +462,12 @@ plot_alphafold_results <- function(LOC, SUMMARY_FOLDER = NULL, xlab = "iScore", 
     stop("The data does not have the expected columns.")
   }
   
-  DF
+  DF <- DF %>%
+    mutate(Confidence = case_when(iScore < 0.4 ~ "Low",
+                                  iScore >= 0.4 & iScore < 0.5 ~ "Medium",
+                                  iScore >= 0.5 & iScore < 0.7 ~ "High",
+                                  TRUE ~ "Very High"),
+           Clash_Indicator = iRes/iCnt)
   
   max_iScore <- DF %>%
     group_by(as.factor(FILE)) %>%
@@ -476,17 +481,37 @@ plot_alphafold_results <- function(LOC, SUMMARY_FOLDER = NULL, xlab = "iScore", 
   # Check number of unique FILE names
   if (length(unique(DF$FILE)) > 10) {
     plot <- ggplot(DF) +
+      annotate("rect", xmin = 0, xmax = 0.4, ymin = -Inf, ymax = Inf, fill = "gray90", alpha = 0.3) +
+      annotate("rect", xmin = 0.4, xmax = 0.5, ymin = -Inf, ymax = Inf, fill = "gray40", alpha = 0.3) +
+      annotate("rect", xmin = 0.5, xmax = 0.7, ymin = -Inf, ymax = Inf, fill = "cornflowerblue", alpha = 0.3) +
+      annotate("rect", xmin = 0.7, xmax = 1, ymin = -Inf, ymax = Inf, fill = "lightgreen", alpha = 0.3) +
+      annotate("text", x = 0.41, y = 0.99, col = "black", label = "medium confidence", angle = 90, hjust = 1) +
+      annotate("text", x = 0.51, y = 0.99, col = "blue", label = "high confidence", angle = 90, hjust = 1) +
+      annotate("text", x = 0.71, y = 0.99, col = "darkgreen", label = "very high confidence", angle = 90, hjust = 1) +
       geom_abline(col = "gray") +
+      geom_point(aes(col = Confidence), size = 3) +  # Use the new Confidence variable here
+      scale_color_manual(name = "Confidence",
+                         values = c("Low" = "gray80",
+                                    "Medium" = "gray40",
+                                    "High" = "cornflowerblue",
+                                    "Very High" = "lightgreen")) +
+      expand_limits(x=c(0,1), y=c(0,1)) +
       geom_point(aes(iScore, piTM)) +
       geom_point(data = max_iScore, aes(iScore, piTM), size = 4) +
-      expand_limits(x = c(0.01, 1), y = c(0.01, 1)) +
       labs(x = xlab, y = ylab, title = plot_title)
   } else {
     plot <- ggplot(DF) +
+      annotate("rect", xmin = 0, xmax = 0.4, ymin = -Inf, ymax = Inf, fill = "gray90", alpha = 0.3) +
+      annotate("rect", xmin = 0.4, xmax = 0.5, ymin = -Inf, ymax = Inf, fill = "gray40", alpha = 0.3) +
+      annotate("rect", xmin = 0.5, xmax = 0.7, ymin = -Inf, ymax = Inf, fill = "cornflowerblue", alpha = 0.3) +
+      annotate("rect", xmin = 0.7, xmax = 1, ymin = -Inf, ymax = Inf, fill = "lightgreen", alpha = 0.3) +
+      annotate("text", x = 0.41, y = 0.99, col = "black", label = "medium confidence", angle = 90, hjust = 1) +
+      annotate("text", x = 0.51, y = 0.99, col = "blue", label = "high confidence", angle = 90, hjust = 1) +
+      annotate("text", x = 0.71, y = 0.99, col = "darkgreen", label = "very high confidence", angle = 90, hjust = 1) +
       geom_abline(col = "gray") +
       geom_point(aes(iScore, piTM, color = FILE)) +
       geom_point(data = max_iScore, aes(iScore, piTM, color = FILE), size = 4) +
-      expand_limits(x = c(0.01, 1), y = c(0.01, 1)) +
+      expand_limits(x=c(0,1), y=c(0,1)) +
       labs(x = xlab, y = ylab, title = plot_title)
   }
   
