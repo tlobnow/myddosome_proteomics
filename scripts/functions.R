@@ -469,6 +469,10 @@ plot_alphafold_results <- function(LOC, SUMMARY_FOLDER = NULL, xlab = "iScore", 
                                   TRUE ~ "Very High"),
            Clash_Indicator = iRes/iCnt)
   
+  # Adjust the levels of the Confidence factor variable
+  DF$Confidence <- factor(DF$Confidence, levels = c("Low", "Medium", "High", "Very High"))
+  
+  
   max_iScore <- DF %>%
     group_by(as.factor(FILE)) %>%
     slice_max(order_by = iScore, n = 1) %>%
@@ -489,15 +493,14 @@ plot_alphafold_results <- function(LOC, SUMMARY_FOLDER = NULL, xlab = "iScore", 
       annotate("text", x = 0.51, y = 0.99, col = "blue", label = "high confidence", angle = 90, hjust = 1) +
       annotate("text", x = 0.71, y = 0.99, col = "darkgreen", label = "very high confidence", angle = 90, hjust = 1) +
       geom_abline(col = "gray") +
-      geom_point(aes(col = Confidence), size = 3) +  # Use the new Confidence variable here
+      geom_point(aes(iScore, piTM, col = Confidence), size = 3) +  # Use the new Confidence variable here
+      geom_point(data = max_iScore, aes(iScore, piTM, col = Confidence), size = 5) +
       scale_color_manual(name = "Confidence",
                          values = c("Low" = "gray80",
                                     "Medium" = "gray40",
                                     "High" = "cornflowerblue",
                                     "Very High" = "lightgreen")) +
       expand_limits(x=c(0,1), y=c(0,1)) +
-      geom_point(aes(iScore, piTM)) +
-      geom_point(data = max_iScore, aes(iScore, piTM), size = 4) +
       labs(x = xlab, y = ylab, title = plot_title)
   } else {
     plot <- ggplot(DF) +
