@@ -436,3 +436,50 @@ run_extraction <- function(LOC, MAIN = NULL, SUMMARY_FOLDER = NULL, ADD_2_EXISTI
   }
 }
 
+################################################################################
+################################################################################
+################################################################################
+
+
+plot_alphafold_results <- function(LOC, SUMMARY_FOLDER = NULL, xlab = "iScore", ylab = "piTM", plot_title = NULL) {
+  library(ggplot2)
+  library(dplyr)
+  library(data.table)
+  
+  if (is.null(SUMMARY_FOLDER)) {
+    SUMMARY_FOLDER <- "/Volumes/TAYLOR-LAB/Finn/CURATED_RESULTS/SUMMARIES/"
+  }
+  
+  file_path <- paste0(SUMMARY_FOLDER, LOC, ".csv")
+  
+  if (!file.exists(file_path)) {
+    stop("The specified file does not exist.")
+  }
+  
+  DF <- data.table::fread(file_path)
+  
+  if (!all(c("iScore", "piTM", "FILE", "RECYCLE") %in% names(DF))) {
+    stop("The data does not have the expected columns.")
+  }
+  
+  DF
+  
+  max_iScore <- DF %>%
+    group_by(as.factor(FILE)) %>%
+    slice_max(order_by = iScore, n = 1) %>%
+    ungroup()
+  
+  if (is.null(plot_title)) {
+    plot_title = paste0("AlphaFold Results for ", LOC)
+  }
+  
+  plot <- DF %>%
+    ggplot() +
+    geom_abline(col = "gray") +
+    geom_point(aes(iScore, piTM, color = FILE)) +
+    geom_point(data = max_iScore, aes(iScore, piTM, color = FILE), size = 4) +
+    expand_limits(x = c(0.01, 1), y = c(0.01, 1)) +
+    labs(x = xlab, y = ylab, title = plot_title)
+  
+  return(plot)
+}
