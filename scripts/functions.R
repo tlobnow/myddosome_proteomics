@@ -441,10 +441,9 @@ run_extraction <- function(LOC, MAIN = NULL, SUMMARY_FOLDER = NULL, ADD_2_EXISTI
 ################################################################################
 
 
-plot_alphafold_results <- function(LOC, SUMMARY_FOLDER = NULL, xlab = "iScore", ylab = "piTM", plot_title = NULL) {
-  library(ggplot2)
-  library(dplyr)
-  library(data.table)
+plot_alphafold_results <- function(LOC, SUMMARY_FOLDER = NULL, xlab = "iScore", ylab = "piTM", 
+                                   plot_title = NULL, pattern = NULL, best_only = FALSE) {
+  pacman::p_load(ggplot2, dplyr, data.table, ggrepel, ggalt, stringr)
   
   if (is.null(SUMMARY_FOLDER)) {
     SUMMARY_FOLDER <- "/Volumes/TAYLOR-LAB/Finn/CURATED_RESULTS/SUMMARIES/"
@@ -472,51 +471,78 @@ plot_alphafold_results <- function(LOC, SUMMARY_FOLDER = NULL, xlab = "iScore", 
   # Adjust the levels of the Confidence factor variable
   DF$Confidence <- factor(DF$Confidence, levels = c("Low", "Medium", "High", "Very High"))
   
+  if (!is.null(pattern)) {  
+    DF <- DF %>% filter(stringr::str_detect(FILE, fixed(pattern)))
+    
+    # ensure that the DF isn't empty
+    if (nrow(DF) == 0) {
+      stop("The file you want to filter for was not found. Is it spelled correctly?")
+    }
+  }
+  
   
   max_iScore <- DF %>%
     group_by(as.factor(FILE)) %>%
     slice_max(order_by = iScore, n = 1) %>%
     ungroup()
   
+  if (isTRUE(best_only)) {  
+    DF <- max_iScore
+  }
+  
+  mean_labeling <- DF %>%
+    group_by(FILE) %>%
+    mutate(mean_iScore = mean(iScore),
+           mean_piTM   = mean(piTM)) %>%
+    distinct(FILE, .keep_all = T) %>%
+    ungroup()
+    
+  
+  print(max_iScore %>%
+          dplyr::select(FILE, RECYCLE, iScore, piTM) %>% 
+          dplyr::arrange(desc(iScore)))
+  
   if (is.null(plot_title)) {
     plot_title = paste0("AlphaFold Results for ", LOC)
   }
   
-  # Check number of unique FILE names
+  # Base plot
+  plot <- ggplot(DF) +
+    annotate("rect", xmin = 0, xmax = 0.4, ymin = -Inf, ymax = Inf, fill = "gray90", alpha = 0.3) +
+    annotate("rect", xmin = 0.4, xmax = 0.5, ymin = -Inf, ymax = Inf, fill = "gray40", alpha = 0.3) +
+    annotate("rect", xmin = 0.5, xmax = 0.7, ymin = -Inf, ymax = Inf, fill = "cornflowerblue", alpha = 0.3) +
+    annotate("rect", xmin = 0.7, xmax = 1, ymin = -Inf, ymax = Inf, fill = "lightgreen", alpha = 0.3) +
+    annotate("text", x = 0.41, y = 0.99, col = "black", label = "medium confidence", angle = 90, hjust = 1) +
+    annotate("text", x = 0.51, y = 0.99, col = "blue", label = "high confidence", angle = 90, hjust = 1) +
+    annotate("text", x = 0.71, y = 0.99, col = "darkgreen", label = "very high confidence", angle = 90, hjust = 1) +
+    geom_abline(col = "gray")
+  
+  # Add encircle only if best_only is FALSE
+  if (!best_only & length(unique(DF$FILE)) <= 10) {
+    plot <- plot + geom_encircle(aes(iScore, piTM, fill = FILE), alpha = 0.1)
+  }
+  
+  # Check number of unique FILE names and continue adding layers based on condition
   if (length(unique(DF$FILE)) > 10) {
-    plot <- ggplot(DF) +
-      annotate("rect", xmin = 0, xmax = 0.4, ymin = -Inf, ymax = Inf, fill = "gray90", alpha = 0.3) +
-      annotate("rect", xmin = 0.4, xmax = 0.5, ymin = -Inf, ymax = Inf, fill = "gray40", alpha = 0.3) +
-      annotate("rect", xmin = 0.5, xmax = 0.7, ymin = -Inf, ymax = Inf, fill = "cornflowerblue", alpha = 0.3) +
-      annotate("rect", xmin = 0.7, xmax = 1, ymin = -Inf, ymax = Inf, fill = "lightgreen", alpha = 0.3) +
-      annotate("text", x = 0.41, y = 0.99, col = "black", label = "medium confidence", angle = 90, hjust = 1) +
-      annotate("text", x = 0.51, y = 0.99, col = "blue", label = "high confidence", angle = 90, hjust = 1) +
-      annotate("text", x = 0.71, y = 0.99, col = "darkgreen", label = "very high confidence", angle = 90, hjust = 1) +
-      geom_abline(col = "gray") +
-      geom_point(aes(iScore, piTM, col = Confidence), size = 3) +  # Use the new Confidence variable here
+    plot <- plot +
+      geom_point(aes(iScore, piTM, col = Confidence), size = 3) +
       geom_point(data = max_iScore, aes(iScore, piTM, col = Confidence), size = 5) +
       scale_color_manual(name = "Confidence",
                          values = c("Low" = "gray80",
                                     "Medium" = "gray40",
                                     "High" = "cornflowerblue",
-                                    "Very High" = "lightgreen")) +
-      expand_limits(x=c(0,1), y=c(0,1)) +
-      labs(x = xlab, y = ylab, title = plot_title)
+                                    "Very High" = "lightgreen"))
   } else {
-    plot <- ggplot(DF) +
-      annotate("rect", xmin = 0, xmax = 0.4, ymin = -Inf, ymax = Inf, fill = "gray90", alpha = 0.3) +
-      annotate("rect", xmin = 0.4, xmax = 0.5, ymin = -Inf, ymax = Inf, fill = "gray40", alpha = 0.3) +
-      annotate("rect", xmin = 0.5, xmax = 0.7, ymin = -Inf, ymax = Inf, fill = "cornflowerblue", alpha = 0.3) +
-      annotate("rect", xmin = 0.7, xmax = 1, ymin = -Inf, ymax = Inf, fill = "lightgreen", alpha = 0.3) +
-      annotate("text", x = 0.41, y = 0.99, col = "black", label = "medium confidence", angle = 90, hjust = 1) +
-      annotate("text", x = 0.51, y = 0.99, col = "blue", label = "high confidence", angle = 90, hjust = 1) +
-      annotate("text", x = 0.71, y = 0.99, col = "darkgreen", label = "very high confidence", angle = 90, hjust = 1) +
-      geom_abline(col = "gray") +
+    plot <- plot +
       geom_point(aes(iScore, piTM, color = FILE)) +
       geom_point(data = max_iScore, aes(iScore, piTM, color = FILE), size = 4) +
-      expand_limits(x=c(0,1), y=c(0,1)) +
-      labs(x = xlab, y = ylab, title = plot_title)
+      geom_label_repel(data = mean_labeling, aes(mean_iScore, mean_piTM, label = FILE, color = FILE))
   }
+  
+  # Add remaining layers and return
+  plot <- plot + 
+    expand_limits(x=c(0,1), y=c(0,1)) +
+    labs(x = xlab, y = ylab, title = plot_title)
   
   return(plot)
 }

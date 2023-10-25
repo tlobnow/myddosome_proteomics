@@ -6,12 +6,13 @@ source(file = ifelse(exists("https://raw.githubusercontent.com/tlobnow/myddosome
 # LOC = "DHF_ALL"
 # LOC = "BDLD"
 # LOC = "CHIMY_T6BM"
-# LOC = "CONTROLS"
+LOC = "CONTROLS"
 # LOC = "MYD88"
 # LOC = "TEMP"
 # LOC = "BDLD"
-LOC = "ADLD"
+# LOC = "ADLD"
 # LOC = "EDLD"
+
 
 # MAIN    = file.path("/Volumes/TAYLOR-LAB/Finn/CURATED_RESULTS", LOC, "/")
 # MAIN    = file.path("/Volumes/TAYLOR-LAB/Finn/RESULTS/IP_MS_2/", LOC, "/")
@@ -20,6 +21,9 @@ LOC = "ADLD"
 # MAIN    = file.path("/Volumes/TAYLOR-LAB/Finn/CURATED_RESULTS/", LOC, "/")
 
 run_extraction(LOC = LOC)
-plot_alphafold_results(LOC = LOC)
 
+plot_alphafold_results(LOC = LOC)# filter_by = "EDLD_18_Q9N9X2_GEOCY_Geodia_cydonium_x6")
 
+plot_alphafold_results(LOC = LOC, 
+                       pattern = "DD",
+                       best_only = T)
